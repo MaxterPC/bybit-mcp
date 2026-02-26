@@ -3,7 +3,18 @@
     "allow": [
       "mcp__context7__resolve-library-id",
       "WebFetch(domain:bybit-exchange.github.io)",
-      "mcp__context7__query-docs"
+      "mcp__context7__query-docs",
+      "Bash(git branch -m master main)",
+      "Bash(gh repo create bybit-mcp --public --source=. --push --description \"Bybit Trading MCP Server for Claude - Deployable to Google Cloud Run\")",
+      "Bash(gcloud config get-value project)",
+      "Bash(pip install -e \".[dev]\")",
+      "Bash(python3 -m venv /Users/santiago/Dev/bybit-mcp/.venv)",
+      "Bash(source /Users/santiago/Dev/bybit-mcp/.venv/bin/activate)",
+      "Bash(timeout 5 python -m bybit_mcp)",
+      "Bash(python -c \":*)",
+      "Bash(lsof -ti:8080)",
+      "Bash(xargs kill -9)",
+      "Bash(git add -A)"
     ]
   }
 }
