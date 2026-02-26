@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn>=0.34",
     "python-dotenv>=1.0",
     "starlette>=0.45",
+    "PyJWT>=2.8",
 ]
 
 [tool.hatch.build.targets.wheel]

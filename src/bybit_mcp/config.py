@@ -8,8 +8,15 @@ load_dotenv()
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 BYBIT_TESTNET = os.getenv("BYBIT_TESTNET", "true").lower() == "true"
-MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
 PORT = int(os.getenv("PORT", "8080"))
+
+# Auth: OAuth 2.1 + API Key
+OAUTH_SECRET = os.getenv("OAUTH_SECRET", "")
+MCP_API_KEY = os.getenv("MCP_API_KEY", "") or os.getenv("MCP_AUTH_TOKEN", "")
+SERVICE_URL = os.getenv("SERVICE_URL", f"http://localhost:{PORT}")
+
+# Backward compat
+MCP_AUTH_TOKEN = MCP_API_KEY
 
 # Treat placeholder values as empty
 if BYBIT_API_KEY in ("", "placeholder", "your_api_key_here"):

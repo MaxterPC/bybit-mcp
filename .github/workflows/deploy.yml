@@ -48,9 +48,10 @@ jobs:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
           BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
-          MCP_AUTH_TOKEN: ${{ secrets.MCP_AUTH_TOKEN }}
+          OAUTH_SECRET: ${{ secrets.OAUTH_SECRET }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
         run: |
-          for SECRET_NAME in bybit-api-key bybit-api-secret mcp-auth-token; do
+          for SECRET_NAME in bybit-api-key bybit-api-secret oauth-secret mcp-api-key; do
             VAR_NAME=$(echo "${SECRET_NAME}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
             VALUE=$(eval echo "\$${VAR_NAME}")
             if [ -n "${VALUE}" ]; then
@@ -75,8 +76,8 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 3 \
-            --set-secrets "BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,MCP_AUTH_TOKEN=mcp-auth-token:latest" \
-            --set-env-vars "BYBIT_TESTNET=false" \
+            --set-secrets "BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,OAUTH_SECRET=oauth-secret:latest,MCP_API_KEY=mcp-api-key:latest" \
+            --set-env-vars "BYBIT_TESTNET=false,SERVICE_URL=https://bybit-mcp-231822406248.europe-west1.run.app" \
             --project "${PROJECT_ID}"
 
       - name: Show service URL

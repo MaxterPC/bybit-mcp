@@ -3,23 +3,30 @@ import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from bybit_mcp.config import BYBIT_TESTNET, MCP_AUTH_TOKEN, PORT
+from bybit_mcp.config import BYBIT_TESTNET, MCP_API_KEY, OAUTH_SECRET, PORT, SERVICE_URL
 from bybit_mcp.tools import account, asset, market, position, trading
 
 # ---------------------------------------------------------------------------
-# Auth: protect the MCP endpoint with Bearer token when MCP_AUTH_TOKEN is set
+# Auth: OAuth 2.1 + API Key when OAUTH_SECRET is configured
 # ---------------------------------------------------------------------------
 _auth_kwargs: dict[str, Any] = {}
-if MCP_AUTH_TOKEN:
-    from mcp.server.auth.settings import AuthSettings
+_oauth_provider = None
 
-    from bybit_mcp.auth import BearerTokenVerifier
+if OAUTH_SECRET:
+    from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 
-    _auth_kwargs["token_verifier"] = BearerTokenVerifier()
+    from bybit_mcp.auth import BybitOAuthProvider
+
+    _oauth_provider = BybitOAuthProvider(oauth_secret=OAUTH_SECRET, api_key=MCP_API_KEY)
+    _auth_kwargs["auth_server_provider"] = _oauth_provider
     _auth_kwargs["auth"] = AuthSettings(
-        issuer_url="https://bybit-mcp.run.app",
-        resource_server_url="https://bybit-mcp.run.app",
+        issuer_url=SERVICE_URL,
+        resource_server_url=SERVICE_URL,
+        client_registration_options=ClientRegistrationOptions(enabled=True),
+        revocation_options=RevocationOptions(enabled=True),
     )
 
 mcp = FastMCP(
@@ -30,6 +37,42 @@ mcp = FastMCP(
     port=PORT,
     **_auth_kwargs,
 )
+
+
+# ---------------------------------------------------------------------------
+# Consent page (OAuth authorization approval)
+# ---------------------------------------------------------------------------
+
+@mcp.custom_route("/consent", methods=["GET", "POST"])
+async def consent_page(request: Request) -> Response:
+    """Render consent page (GET) or process approval/denial (POST)."""
+    if _oauth_provider is None:
+        return Response("OAuth not configured", status_code=503)
+
+    if request.method == "GET":
+        consent_id = request.query_params.get("id", "")
+        if consent_id not in _oauth_provider.pending_consents:
+            return Response("Invalid or expired consent request", status_code=400)
+
+        from bybit_mcp.auth import CONSENT_PAGE_HTML
+
+        html = CONSENT_PAGE_HTML.replace("{consent_id}", consent_id)
+        return HTMLResponse(html)
+
+    # POST — process approval or denial
+    form = await request.form()
+    consent_id = form.get("consent_id", "")
+    action = form.get("action", "deny")
+
+    try:
+        if action == "approve":
+            redirect_url = _oauth_provider.approve_consent(consent_id)
+        else:
+            redirect_url = _oauth_provider.deny_consent(consent_id)
+    except ValueError:
+        return Response("Invalid or expired consent request", status_code=400)
+
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 # ---------------------------------------------------------------------------
 # Market Data Tools (public - no auth required)
@@ -724,8 +767,14 @@ def get_withdrawal_records(
 
 def main():
     env_label = "TESTNET" if BYBIT_TESTNET else "MAINNET"
-    auth_label = "AUTH ON" if MCP_AUTH_TOKEN else "NO AUTH"
+    if OAUTH_SECRET:
+        auth_label = "OAuth 2.1"
+        if MCP_API_KEY:
+            auth_label += " + API Key"
+    else:
+        auth_label = "NO AUTH"
     print(f"Starting Bybit MCP Server ({env_label}, {auth_label}) on port {PORT}...")
+    print(f"Service URL: {SERVICE_URL}")
     mcp.run(transport="streamable-http")
 
 
