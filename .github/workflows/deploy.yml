@@ -43,6 +43,22 @@ jobs:
           docker push "${IMAGE}:${COMMIT_SHA}"
           docker push "${IMAGE}:latest"
 
+      - name: Update GCP secrets from GitHub secrets
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+          MCP_AUTH_TOKEN: ${{ secrets.MCP_AUTH_TOKEN }}
+        run: |
+          for SECRET_NAME in bybit-api-key bybit-api-secret mcp-auth-token; do
+            VAR_NAME=$(echo "${SECRET_NAME}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
+            VALUE=$(eval echo "\$${VAR_NAME}")
+            if [ -n "${VALUE}" ]; then
+              echo -n "${VALUE}" | gcloud secrets versions add "${SECRET_NAME}" \
+                --data-file=- --project="${PROJECT_ID}" 2>/dev/null || true
+            fi
+          done
+
       - name: Deploy to Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
