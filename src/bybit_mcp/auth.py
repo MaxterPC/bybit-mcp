@@ -61,18 +61,24 @@ class RateLimiter:
 _registration_limiter = RateLimiter(max_requests=5, window_seconds=600)
 
 
+class InvalidPINError(ValueError):
+    """Raised when the consent PIN is wrong or brute-force limit exceeded."""
+
+
 class BybitOAuthProvider:
     """Full OAuth 2.1 provider with PKCE + static API key support."""
+
+    _MAX_PIN_ATTEMPTS = 5
 
     def __init__(
         self,
         oauth_secret: str,
         api_key: str = "",
-        registration_token: str = "",
+        consent_pin: str = "",
     ) -> None:
         self.oauth_secret = oauth_secret
         self.api_key = api_key
-        self.registration_token = registration_token
+        self.consent_pin = consent_pin
         # In-memory stores (stateless per-instance; JWTs survive restarts)
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self.auth_codes: dict[str, AuthorizationCode] = {}
@@ -80,6 +86,8 @@ class BybitOAuthProvider:
         self.pending_consents: dict[str, tuple[OAuthClientInformationFull, AuthorizationParams]] = {}
         # Revoked token JTIs (for token revocation)
         self.revoked_jtis: set[str] = set()
+        # PIN brute-force protection: consent_id -> failure count
+        self._pin_failures: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Client management
@@ -89,22 +97,12 @@ class BybitOAuthProvider:
         return self.clients.get(client_id)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        # Rate-limit registrations globally
+        # Rate-limit registrations globally (5 per 10 min)
         if not _registration_limiter.check("global"):
             raise RegistrationError(
                 error="invalid_client_metadata",
                 error_description="Rate limit exceeded. Try again later.",
             )
-
-        # Validate registration token via software_id (RFC 7591)
-        if self.registration_token:
-            if not client_info.software_id or not secrets.compare_digest(
-                client_info.software_id, self.registration_token
-            ):
-                raise RegistrationError(
-                    error="unapproved_software_statement",
-                    error_description="Invalid or missing registration token",
-                )
 
         self.clients[client_info.client_id] = client_info
 
@@ -122,11 +120,32 @@ class BybitOAuthProvider:
         self.pending_consents[consent_id] = (client, params)
         return f"/consent?id={consent_id}"
 
-    def approve_consent(self, consent_id: str) -> str:
-        """Approve a consent request. Returns the redirect URL with auth code."""
+    def approve_consent(self, consent_id: str, pin: str = "") -> str:
+        """Approve a consent request. Returns the redirect URL with auth code.
+
+        If a consent_pin is configured, the caller must provide the correct PIN.
+        Raises InvalidPINError on wrong PIN (max 5 attempts per consent).
+        """
         if consent_id not in self.pending_consents:
             raise ValueError("Invalid or expired consent")
 
+        # Verify PIN when configured
+        if self.consent_pin:
+            # Check brute-force limit
+            failures = self._pin_failures.get(consent_id, 0)
+            if failures >= self._MAX_PIN_ATTEMPTS:
+                self.pending_consents.pop(consent_id, None)
+                self._pin_failures.pop(consent_id, None)
+                raise InvalidPINError("Too many failed attempts. Authorization cancelled.")
+
+            # Always run compare_digest for uniform timing (no short-circuit)
+            pin_ok = secrets.compare_digest(pin or "", self.consent_pin)
+            if not pin_ok:
+                self._pin_failures[consent_id] = failures + 1
+                raise InvalidPINError("Invalid PIN")
+
+        # PIN passed (or not required) — clean up failure counter and consume consent
+        self._pin_failures.pop(consent_id, None)
         client, params = self.pending_consents.pop(consent_id)
 
         code = secrets.token_urlsafe(32)
@@ -344,6 +363,12 @@ class BybitOAuthProvider:
 # Consent page HTML
 # ---------------------------------------------------------------------------
 
+PIN_FIELD_HTML = """<div class="pin-group">
+      <label>Security PIN</label>
+      <input type="password" name="pin" class="pin-input"
+             placeholder="Enter PIN" required autocomplete="off">
+    </div>"""
+
 CONSENT_PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -428,6 +453,46 @@ CONSENT_PAGE_HTML = """<!DOCTYPE html>
     background: #2a2a3a;
     color: #e0e0e0;
   }
+  .pin-group {
+    margin-bottom: 24px;
+  }
+  .pin-group label {
+    display: block;
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .pin-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #2a2a3a;
+    border-radius: 10px;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-size: 16px;
+    letter-spacing: 4px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .pin-input:focus {
+    border-color: #f7a600;
+  }
+  .pin-input::placeholder {
+    letter-spacing: normal;
+    color: #555;
+  }
+  .error-msg {
+    color: #ef4444;
+    font-size: 13px;
+    margin-top: 8px;
+    display: none;
+  }
+  .error-msg.show {
+    display: block;
+  }
 </style>
 </head>
 <body>
@@ -444,6 +509,8 @@ CONSENT_PAGE_HTML = """<!DOCTYPE html>
   </ul>
   <form method="POST">
     <input type="hidden" name="consent_id" value="{consent_id}">
+    {pin_field}
+    <div class="error-msg {error_class}">{error_msg}</div>
     <div class="buttons">
       <button type="submit" name="action" value="deny" class="btn btn-deny">Deny</button>
       <button type="submit" name="action" value="approve" class="btn btn-approve">Approve</button>

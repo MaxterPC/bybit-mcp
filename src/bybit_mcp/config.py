@@ -14,16 +14,19 @@ PORT = int(os.getenv("PORT", "8080"))
 OAUTH_SECRET = os.getenv("OAUTH_SECRET", "")
 MCP_API_KEY = os.getenv("MCP_API_KEY", "") or os.getenv("MCP_AUTH_TOKEN", "")
 SERVICE_URL = os.getenv("SERVICE_URL", f"http://localhost:{PORT}")
-REGISTRATION_TOKEN = os.getenv("REGISTRATION_TOKEN", "")
+CONSENT_PIN = os.getenv("CONSENT_PIN", "") or os.getenv("REGISTRATION_TOKEN", "")
 
 # Backward compat
 MCP_AUTH_TOKEN = MCP_API_KEY
+REGISTRATION_TOKEN = CONSENT_PIN  # alias for old imports
 
 # Treat placeholder values as empty
 if BYBIT_API_KEY in ("", "placeholder", "your_api_key_here"):
     BYBIT_API_KEY = ""
 if BYBIT_API_SECRET in ("", "placeholder", "your_api_secret_here"):
     BYBIT_API_SECRET = ""
+if CONSENT_PIN in ("your_secure_pin_here", "your_registration_token_here", "placeholder"):
+    CONSENT_PIN = ""
 
 
 def get_bybit_session(authenticated: bool = True) -> HTTP:

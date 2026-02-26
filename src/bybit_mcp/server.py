@@ -8,12 +8,13 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from bybit_mcp.config import (
     BYBIT_TESTNET,
+    CONSENT_PIN,
     MCP_API_KEY,
     OAUTH_SECRET,
     PORT,
-    REGISTRATION_TOKEN,
     SERVICE_URL,
 )
+from bybit_mcp.auth import InvalidPINError as _InvalidPINError
 from bybit_mcp.tools import account, asset, market, position, trading
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ if OAUTH_SECRET:
     _oauth_provider = BybitOAuthProvider(
         oauth_secret=OAUTH_SECRET,
         api_key=MCP_API_KEY,
-        registration_token=REGISTRATION_TOKEN,
+        consent_pin=CONSENT_PIN,
     )
     _auth_kwargs["auth_server_provider"] = _oauth_provider
     _auth_kwargs["auth"] = AuthSettings(
@@ -57,6 +58,21 @@ mcp = FastMCP(
 # Consent page (OAuth authorization approval)
 # ---------------------------------------------------------------------------
 
+def _render_consent_html(consent_id: str, error_msg: str = "") -> str:
+    """Build the consent page HTML with optional PIN field and error message."""
+    from html import escape as html_escape
+
+    from bybit_mcp.auth import CONSENT_PAGE_HTML, PIN_FIELD_HTML
+
+    html = CONSENT_PAGE_HTML.replace("{consent_id}", html_escape(consent_id))
+    # Show PIN field only when a consent PIN is configured
+    pin_field = PIN_FIELD_HTML if (_oauth_provider and _oauth_provider.consent_pin) else ""
+    html = html.replace("{pin_field}", pin_field)
+    html = html.replace("{error_msg}", html_escape(error_msg) if error_msg else "")
+    html = html.replace("{error_class}", "show" if error_msg else "")
+    return html
+
+
 @mcp.custom_route("/consent", methods=["GET", "POST"])
 async def consent_page(request: Request) -> Response:
     """Render consent page (GET) or process approval/denial (POST)."""
@@ -68,23 +84,26 @@ async def consent_page(request: Request) -> Response:
         if consent_id not in _oauth_provider.pending_consents:
             return Response("Invalid or expired consent request", status_code=400)
 
-        from html import escape as html_escape
-
-        from bybit_mcp.auth import CONSENT_PAGE_HTML
-
-        html = CONSENT_PAGE_HTML.replace("{consent_id}", html_escape(consent_id))
-        return HTMLResponse(html)
+        return HTMLResponse(_render_consent_html(consent_id))
 
     # POST — process approval or denial
     form = await request.form()
-    consent_id = form.get("consent_id", "")
-    action = form.get("action", "deny")
+    consent_id = str(form.get("consent_id", ""))
+    action = str(form.get("action", "deny"))
+    pin = str(form.get("pin", ""))
 
     try:
         if action == "approve":
-            redirect_url = _oauth_provider.approve_consent(consent_id)
+            redirect_url = _oauth_provider.approve_consent(consent_id, pin)
         else:
             redirect_url = _oauth_provider.deny_consent(consent_id)
+    except _InvalidPINError as exc:
+        error_msg = str(exc)
+        if consent_id in _oauth_provider.pending_consents:
+            # Re-render consent page with error (consent NOT consumed — user can retry)
+            return HTMLResponse(_render_consent_html(consent_id, error_msg=error_msg))
+        # Too many attempts — consent was consumed
+        return Response(error_msg, status_code=403)
     except ValueError:
         return Response("Invalid or expired consent request", status_code=400)
 
@@ -793,8 +812,8 @@ def main():
         auth_label = "OAuth 2.1"
         if MCP_API_KEY:
             auth_label += " + API Key"
-        if REGISTRATION_TOKEN:
-            auth_label += " + Registration Token"
+        if CONSENT_PIN:
+            auth_label += " + Consent PIN"
     else:
         auth_label = "NO AUTH (testnet only)"
     print(f"Starting Bybit MCP Server ({env_label}, {auth_label}) on port {PORT}...")

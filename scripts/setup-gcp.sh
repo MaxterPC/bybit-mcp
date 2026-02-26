@@ -146,7 +146,7 @@ echo "   echo -n 'VALUE' | gcloud secrets versions add bybit-api-key --data-file
 echo "   echo -n 'VALUE' | gcloud secrets versions add bybit-api-secret --data-file=- --project=${PROJECT_ID}"
 echo "   echo -n 'VALUE' | gcloud secrets versions add oauth-secret --data-file=- --project=${PROJECT_ID}"
 echo "   echo -n 'VALUE' | gcloud secrets versions add mcp-api-key --data-file=- --project=${PROJECT_ID}"
-echo "   echo -n 'VALUE' | gcloud secrets versions add registration-token --data-file=- --project=${PROJECT_ID}"
+echo "   echo -n 'VALUE' | gcloud secrets versions add registration-token --data-file=- --project=${PROJECT_ID}  # CONSENT_PIN"
 echo ""
 echo "2. Add GitHub repo secrets (Workload Identity Federation - no key file needed):"
 echo "   gh secret set GCP_PROJECT_ID --body '${PROJECT_ID}'"
