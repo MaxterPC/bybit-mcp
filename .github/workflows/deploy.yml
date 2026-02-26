@@ -76,7 +76,7 @@ jobs:
             --min-instances 0 \
             --max-instances 3 \
             --set-secrets "BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,MCP_AUTH_TOKEN=mcp-auth-token:latest" \
-            --set-env-vars "BYBIT_TESTNET=true" \
+            --set-env-vars "BYBIT_TESTNET=false" \
             --project "${PROJECT_ID}"
 
       - name: Show service URL
