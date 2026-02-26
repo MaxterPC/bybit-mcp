@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import secrets
 import time
+from html import escape as html_escape
 from urllib.parse import urlencode
 
 import jwt
@@ -201,8 +202,8 @@ class BybitOAuthProvider:
     # ------------------------------------------------------------------
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        # Check static API key first
-        if self.api_key and token == self.api_key:
+        # Check static API key first (timing-safe comparison)
+        if self.api_key and secrets.compare_digest(token, self.api_key):
             return AccessToken(
                 token=token,
                 client_id="api-key",
@@ -240,14 +241,33 @@ class BybitOAuthProvider:
             "scopes": scopes,
             "iat": now,
             "exp": now + ttl,
+            "iss": "bybit-mcp",
+            "aud": "bybit-mcp",
+            "jti": secrets.token_urlsafe(16),
         }
         return jwt.encode(payload, self.oauth_secret, algorithm=_JWT_ALGORITHM)
 
     def _decode_jwt(self, token: str) -> dict | None:
         try:
-            return jwt.decode(token, self.oauth_secret, algorithms=[_JWT_ALGORITHM])
+            return jwt.decode(
+                token,
+                self.oauth_secret,
+                algorithms=[_JWT_ALGORITHM],
+                issuer="bybit-mcp",
+                audience="bybit-mcp",
+            )
         except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
             return None
+
+    def cleanup_expired_consents(self) -> None:
+        """Remove pending consents older than the auth code TTL."""
+        now = time.time()
+        expired = [
+            cid for cid, (_, params) in self.pending_consents.items()
+            if hasattr(params, "_created_at") and now - params._created_at > _AUTH_CODE_TTL
+        ]
+        for cid in expired:
+            self.pending_consents.pop(cid, None)
 
 
 # ---------------------------------------------------------------------------

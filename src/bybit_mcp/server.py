@@ -54,9 +54,11 @@ async def consent_page(request: Request) -> Response:
         if consent_id not in _oauth_provider.pending_consents:
             return Response("Invalid or expired consent request", status_code=400)
 
+        from html import escape as html_escape
+
         from bybit_mcp.auth import CONSENT_PAGE_HTML
 
-        html = CONSENT_PAGE_HTML.replace("{consent_id}", consent_id)
+        html = CONSENT_PAGE_HTML.replace("{consent_id}", html_escape(consent_id))
         return HTMLResponse(html)
 
     # POST — process approval or denial

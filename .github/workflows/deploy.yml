@@ -46,19 +46,18 @@ jobs:
       - name: Update GCP secrets from GitHub secrets
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
-          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
-          OAUTH_SECRET: ${{ secrets.OAUTH_SECRET }}
-          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
         run: |
-          for SECRET_NAME in bybit-api-key bybit-api-secret oauth-secret mcp-api-key; do
-            VAR_NAME=$(echo "${SECRET_NAME}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
-            VALUE=$(eval echo "\$${VAR_NAME}")
-            if [ -n "${VALUE}" ]; then
-              echo -n "${VALUE}" | gcloud secrets versions add "${SECRET_NAME}" \
+          update_secret() {
+            local name="$1" value="$2"
+            if [ -n "${value}" ]; then
+              echo -n "${value}" | gcloud secrets versions add "${name}" \
                 --data-file=- --project="${PROJECT_ID}" 2>/dev/null || true
             fi
-          done
+          }
+          update_secret "bybit-api-key" "${{ secrets.BYBIT_API_KEY }}"
+          update_secret "bybit-api-secret" "${{ secrets.BYBIT_API_SECRET }}"
+          update_secret "oauth-secret" "${{ secrets.OAUTH_SECRET }}"
+          update_secret "mcp-api-key" "${{ secrets.MCP_API_KEY }}"
 
       - name: Deploy to Cloud Run
         env:
