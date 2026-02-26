@@ -30,7 +30,8 @@
       "Bash(gcloud builds submit /Users/santiago/Dev/bybit-mcp/ --tag \"$IMAGE:latest\" --project=bybit-mcp-trading --region=us-east1)",
       "Bash(git add pyproject.toml)",
       "Bash(gcloud run deploy bybit-mcp --image \"$IMAGE:latest\" --region us-east1 --platform managed --allow-unauthenticated --port 8080 --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --set-secrets \"BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,MCP_AUTH_TOKEN=mcp-auth-token:latest\" --set-env-vars \"BYBIT_TESTNET=true\" --project bybit-mcp-trading)",
-      "Bash(gcloud logging read \"resource.type=cloud_run_revision AND resource.labels.service_name=bybit-mcp\" --project=bybit-mcp-trading --limit=20 --format=\"value\\(textPayload\\)\")"
+      "Bash(gcloud logging read \"resource.type=cloud_run_revision AND resource.labels.service_name=bybit-mcp\" --project=bybit-mcp-trading --limit=20 --format=\"value\\(textPayload\\)\")",
+      "Bash(gcloud run services delete bybit-mcp --region us-east1 --project bybit-mcp-trading --quiet)"
     ]
   }
 }
