@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__context7__resolve-library-id",
+      "WebFetch(domain:bybit-exchange.github.io)",
+      "mcp__context7__query-docs"
+    ]
+  }
+}
