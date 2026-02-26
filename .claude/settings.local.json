@@ -14,7 +14,23 @@
       "Bash(python -c \":*)",
       "Bash(lsof -ti:8080)",
       "Bash(xargs kill -9)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(git commit:*)",
+      "Bash(git push origin main)",
+      "Bash(gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com cloudbuild.googleapis.com --project=bybit-mcp-trading)",
+      "Bash(gcloud artifacts repositories create bybit-mcp --repository-format=docker --location=us-east1 --description=\"Bybit MCP Docker images\" --project=bybit-mcp-trading)",
+      "Bash(done)",
+      "Bash(__NEW_LINE_aa39676bc35c9e88__ echo \"Service account created and roles granted.\")",
+      "Bash(gcloud secrets create \"$SECRET\" --data-file=- --replication-policy=automatic --project=bybit-mcp-trading)",
+      "Bash(gh secret set GCP_PROJECT_ID --body \"bybit-mcp-trading\" --repo MaxterPC/bybit-mcp)",
+      "Bash(gh secret list --repo MaxterPC/bybit-mcp)",
+      "Bash(gcloud auth configure-docker us-east1-docker.pkg.dev --quiet --project=bybit-mcp-trading)",
+      "Bash(IMAGE=\"us-east1-docker.pkg.dev/bybit-mcp-trading/bybit-mcp/bybit-mcp\")",
+      "Bash(docker build -t \"$IMAGE:latest\" /Users/santiago/Dev/bybit-mcp/)",
+      "Bash(gcloud builds submit /Users/santiago/Dev/bybit-mcp/ --tag \"$IMAGE:latest\" --project=bybit-mcp-trading --region=us-east1)",
+      "Bash(git add pyproject.toml)",
+      "Bash(gcloud run deploy bybit-mcp --image \"$IMAGE:latest\" --region us-east1 --platform managed --allow-unauthenticated --port 8080 --memory 512Mi --cpu 1 --min-instances 0 --max-instances 3 --set-secrets \"BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,MCP_AUTH_TOKEN=mcp-auth-token:latest\" --set-env-vars \"BYBIT_TESTNET=true\" --project bybit-mcp-trading)",
+      "Bash(gcloud logging read \"resource.type=cloud_run_revision AND resource.labels.service_name=bybit-mcp\" --project=bybit-mcp-trading --limit=20 --format=\"value\\(textPayload\\)\")"
     ]
   }
 }
