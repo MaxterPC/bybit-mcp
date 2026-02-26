@@ -15,6 +15,9 @@ dependencies = [
     "starlette>=0.45",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/bybit_mcp"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
