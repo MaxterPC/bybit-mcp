@@ -4,8 +4,23 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from bybit_mcp.config import BYBIT_TESTNET, PORT
+from bybit_mcp.config import BYBIT_TESTNET, MCP_AUTH_TOKEN, PORT
 from bybit_mcp.tools import account, asset, market, position, trading
+
+# ---------------------------------------------------------------------------
+# Auth: protect the MCP endpoint with Bearer token when MCP_AUTH_TOKEN is set
+# ---------------------------------------------------------------------------
+_auth_kwargs: dict[str, Any] = {}
+if MCP_AUTH_TOKEN:
+    from mcp.server.auth.settings import AuthSettings
+
+    from bybit_mcp.auth import BearerTokenVerifier
+
+    _auth_kwargs["token_verifier"] = BearerTokenVerifier()
+    _auth_kwargs["auth"] = AuthSettings(
+        issuer_url="https://bybit-mcp.run.app",
+        resource_server_url="https://bybit-mcp.run.app",
+    )
 
 mcp = FastMCP(
     "Bybit Trading",
@@ -13,6 +28,7 @@ mcp = FastMCP(
     json_response=True,
     host="0.0.0.0",
     port=PORT,
+    **_auth_kwargs,
 )
 
 # ---------------------------------------------------------------------------
@@ -708,7 +724,8 @@ def get_withdrawal_records(
 
 def main():
     env_label = "TESTNET" if BYBIT_TESTNET else "MAINNET"
-    print(f"Starting Bybit MCP Server ({env_label}) on port {PORT}...")
+    auth_label = "AUTH ON" if MCP_AUTH_TOKEN else "NO AUTH"
+    print(f"Starting Bybit MCP Server ({env_label}, {auth_label}) on port {PORT}...")
     mcp.run(transport="streamable-http")
 
 
