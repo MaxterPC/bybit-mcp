@@ -82,6 +82,4 @@ jobs:
             --set-secrets "BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,OAUTH_SECRET=oauth-secret:latest,MCP_API_KEY=mcp-api-key:latest,CONSENT_PIN=registration-token:latest" \
             --set-env-vars "BYBIT_TESTNET=false,SERVICE_URL=https://bybit-mcp-231822406248.europe-west1.run.app" \
             --project "${PROJECT_ID}"
-
-      - name: Print service URL
-        run: echo "## Deployed to: https://bybit-mcp-231822406248.europe-west1.run.app/mcp" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Deployed to: https://bybit-mcp-231822406248.europe-west1.run.app/mcp" >> "$GITHUB_STEP_SUMMARY"
