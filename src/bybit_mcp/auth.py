@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import secrets
 import time
+from collections import defaultdict
 from html import escape as html_escape
 from urllib.parse import urlencode
 
@@ -18,6 +19,7 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
     RefreshToken,
+    RegistrationError,
     TokenError,
     construct_redirect_uri,
 )
@@ -25,22 +27,59 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 # JWT config
 _ACCESS_TOKEN_TTL = 3600  # 1 hour
-_REFRESH_TOKEN_TTL = 30 * 24 * 3600  # 30 days
+_REFRESH_TOKEN_TTL = 7 * 24 * 3600  # 7 days
 _AUTH_CODE_TTL = 600  # 10 minutes
 _JWT_ALGORITHM = "HS256"
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter (sliding window)
+# ---------------------------------------------------------------------------
+
+
+class RateLimiter:
+    """Simple in-memory sliding-window rate limiter."""
+
+    def __init__(self, max_requests: int, window_seconds: int) -> None:
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._timestamps: dict[str, list[float]] = defaultdict(list)
+
+    def check(self, key: str) -> bool:
+        """Return True if the request is allowed, False if rate-limited."""
+        now = time.monotonic()
+        cutoff = now - self.window_seconds
+        # Prune expired timestamps
+        self._timestamps[key] = [t for t in self._timestamps[key] if t > cutoff]
+        if len(self._timestamps[key]) >= self.max_requests:
+            return False
+        self._timestamps[key].append(now)
+        return True
+
+
+# Global rate limiter: max 5 registrations per 10 minutes
+_registration_limiter = RateLimiter(max_requests=5, window_seconds=600)
 
 
 class BybitOAuthProvider:
     """Full OAuth 2.1 provider with PKCE + static API key support."""
 
-    def __init__(self, oauth_secret: str, api_key: str = "") -> None:
+    def __init__(
+        self,
+        oauth_secret: str,
+        api_key: str = "",
+        registration_token: str = "",
+    ) -> None:
         self.oauth_secret = oauth_secret
         self.api_key = api_key
+        self.registration_token = registration_token
         # In-memory stores (stateless per-instance; JWTs survive restarts)
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self.auth_codes: dict[str, AuthorizationCode] = {}
         # Pending consent sessions: consent_id -> (client, params)
         self.pending_consents: dict[str, tuple[OAuthClientInformationFull, AuthorizationParams]] = {}
+        # Revoked token JTIs (for token revocation)
+        self.revoked_jtis: set[str] = set()
 
     # ------------------------------------------------------------------
     # Client management
@@ -50,6 +89,23 @@ class BybitOAuthProvider:
         return self.clients.get(client_id)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        # Rate-limit registrations globally
+        if not _registration_limiter.check("global"):
+            raise RegistrationError(
+                error="invalid_client_metadata",
+                error_description="Rate limit exceeded. Try again later.",
+            )
+
+        # Validate registration token via software_id (RFC 7591)
+        if self.registration_token:
+            if not client_info.software_id or not secrets.compare_digest(
+                client_info.software_id, self.registration_token
+            ):
+                raise RegistrationError(
+                    error="unapproved_software_statement",
+                    error_description="Invalid or missing registration token",
+                )
+
         self.clients[client_info.client_id] = client_info
 
     # ------------------------------------------------------------------
@@ -123,7 +179,6 @@ class BybitOAuthProvider:
         # Remove code (single-use)
         self.auth_codes.pop(authorization_code.code, None)
 
-        now = int(time.time())
         scopes = authorization_code.scopes
 
         access_token = self._create_jwt(
@@ -176,6 +231,11 @@ class BybitOAuthProvider:
     ) -> OAuthToken:
         use_scopes = scopes if scopes else refresh_token.scopes
 
+        # Revoke the old refresh token (rotation)
+        old_payload = self._decode_jwt(refresh_token.token, skip_revocation_check=True)
+        if old_payload and old_payload.get("jti"):
+            self.revoked_jtis.add(old_payload["jti"])
+
         access_token = self._create_jwt(
             sub=client.client_id,
             token_type="access",
@@ -223,11 +283,15 @@ class BybitOAuthProvider:
         )
 
     # ------------------------------------------------------------------
-    # Revocation (no-op for stateless JWTs)
+    # Revocation (jti blacklist)
     # ------------------------------------------------------------------
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
-        pass  # JWTs expire naturally
+        """Revoke a token by adding its jti to the blacklist."""
+        raw = token.token
+        payload = self._decode_jwt(raw, skip_revocation_check=True)
+        if payload and payload.get("jti"):
+            self.revoked_jtis.add(payload["jti"])
 
     # ------------------------------------------------------------------
     # JWT helpers
@@ -247,9 +311,9 @@ class BybitOAuthProvider:
         }
         return jwt.encode(payload, self.oauth_secret, algorithm=_JWT_ALGORITHM)
 
-    def _decode_jwt(self, token: str) -> dict | None:
+    def _decode_jwt(self, token: str, *, skip_revocation_check: bool = False) -> dict | None:
         try:
-            return jwt.decode(
+            payload = jwt.decode(
                 token,
                 self.oauth_secret,
                 algorithms=[_JWT_ALGORITHM],
@@ -258,6 +322,12 @@ class BybitOAuthProvider:
             )
         except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
             return None
+
+        # Check jti revocation blacklist
+        if not skip_revocation_check and payload.get("jti") in self.revoked_jtis:
+            return None
+
+        return payload
 
     def cleanup_expired_consents(self) -> None:
         """Remove pending consents older than the auth code TTL."""

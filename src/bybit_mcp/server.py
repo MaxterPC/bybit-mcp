@@ -6,7 +6,14 @@ from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from bybit_mcp.config import BYBIT_TESTNET, MCP_API_KEY, OAUTH_SECRET, PORT, SERVICE_URL
+from bybit_mcp.config import (
+    BYBIT_TESTNET,
+    MCP_API_KEY,
+    OAUTH_SECRET,
+    PORT,
+    REGISTRATION_TOKEN,
+    SERVICE_URL,
+)
 from bybit_mcp.tools import account, asset, market, position, trading
 
 # ---------------------------------------------------------------------------
@@ -20,12 +27,19 @@ if OAUTH_SECRET:
 
     from bybit_mcp.auth import BybitOAuthProvider
 
-    _oauth_provider = BybitOAuthProvider(oauth_secret=OAUTH_SECRET, api_key=MCP_API_KEY)
+    _oauth_provider = BybitOAuthProvider(
+        oauth_secret=OAUTH_SECRET,
+        api_key=MCP_API_KEY,
+        registration_token=REGISTRATION_TOKEN,
+    )
     _auth_kwargs["auth_server_provider"] = _oauth_provider
     _auth_kwargs["auth"] = AuthSettings(
         issuer_url=SERVICE_URL,
         resource_server_url=SERVICE_URL,
-        client_registration_options=ClientRegistrationOptions(enabled=True),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=["all"],
+        ),
         revocation_options=RevocationOptions(enabled=True),
     )
 
@@ -768,13 +782,21 @@ def get_withdrawal_records(
 # ---------------------------------------------------------------------------
 
 def main():
+    # Refuse to start mainnet without authentication
+    if not BYBIT_TESTNET and not OAUTH_SECRET and not MCP_API_KEY:
+        print("FATAL: Refusing to start MAINNET server without authentication.")
+        print("Set OAUTH_SECRET or MCP_API_KEY to enable auth.")
+        raise SystemExit(1)
+
     env_label = "TESTNET" if BYBIT_TESTNET else "MAINNET"
     if OAUTH_SECRET:
         auth_label = "OAuth 2.1"
         if MCP_API_KEY:
             auth_label += " + API Key"
+        if REGISTRATION_TOKEN:
+            auth_label += " + Registration Token"
     else:
-        auth_label = "NO AUTH"
+        auth_label = "NO AUTH (testnet only)"
     print(f"Starting Bybit MCP Server ({env_label}, {auth_label}) on port {PORT}...")
     print(f"Service URL: {SERVICE_URL}")
     mcp.run(transport="streamable-http")
