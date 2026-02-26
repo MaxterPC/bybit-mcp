@@ -23,7 +23,8 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -46,19 +47,19 @@ jobs:
       - name: Update GCP secrets from GitHub secrets
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
-          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
-          OAUTH_SECRET: ${{ secrets.OAUTH_SECRET }}
-          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
         run: |
-          for SECRET_NAME in bybit-api-key bybit-api-secret oauth-secret mcp-api-key; do
-            VAR_NAME=$(echo "${SECRET_NAME}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
-            VALUE=$(eval echo "\$${VAR_NAME}")
-            if [ -n "${VALUE}" ]; then
-              echo -n "${VALUE}" | gcloud secrets versions add "${SECRET_NAME}" \
+          update_secret() {
+            local name="$1" value="$2"
+            if [ -n "${value}" ]; then
+              echo -n "${value}" | gcloud secrets versions add "${name}" \
                 --data-file=- --project="${PROJECT_ID}" 2>/dev/null || true
             fi
-          done
+          }
+          update_secret "bybit-api-key" "${{ secrets.BYBIT_API_KEY }}"
+          update_secret "bybit-api-secret" "${{ secrets.BYBIT_API_SECRET }}"
+          update_secret "oauth-secret" "${{ secrets.OAUTH_SECRET }}"
+          update_secret "mcp-api-key" "${{ secrets.MCP_API_KEY }}"
+          update_secret "registration-token" "${{ secrets.REGISTRATION_TOKEN }}"
 
       - name: Deploy to Cloud Run
         env:
@@ -75,12 +76,13 @@ jobs:
             --memory 512Mi \
             --cpu 1 \
             --min-instances 0 \
-            --max-instances 3 \
-            --set-secrets "BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,OAUTH_SECRET=oauth-secret:latest,MCP_API_KEY=mcp-api-key:latest" \
-            --set-env-vars "BYBIT_TESTNET=false,SERVICE_URL=https://bybit-mcp-231822406248.europe-west1.run.app" \
+            --max-instances 1 \
+            --session-affinity \
+            --set-secrets "BYBIT_API_KEY=bybit-api-key:latest,BYBIT_API_SECRET=bybit-api-secret:latest,OAUTH_SECRET=oauth-secret:latest,MCP_API_KEY=mcp-api-key:latest,REGISTRATION_TOKEN=registration-token:latest" \
+            --set-env-vars "BYBIT_TESTNET=false" \
             --project "${PROJECT_ID}"
 
-      - name: Show service URL
+      - name: Set SERVICE_URL from deployed service
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
@@ -88,5 +90,9 @@ jobs:
             --region "${GCP_REGION}" \
             --project "${PROJECT_ID}" \
             --format 'value(status.url)')
+          gcloud run services update "${SERVICE_NAME}" \
+            --region "${GCP_REGION}" \
+            --project "${PROJECT_ID}" \
+            --update-env-vars "SERVICE_URL=${URL}"
           echo "## Deployed to: ${URL}/mcp" >> "$GITHUB_STEP_SUMMARY"
           echo "Service URL: ${URL}/mcp"

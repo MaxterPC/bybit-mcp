@@ -14,6 +14,7 @@ PORT = int(os.getenv("PORT", "8080"))
 OAUTH_SECRET = os.getenv("OAUTH_SECRET", "")
 MCP_API_KEY = os.getenv("MCP_API_KEY", "") or os.getenv("MCP_AUTH_TOKEN", "")
 SERVICE_URL = os.getenv("SERVICE_URL", f"http://localhost:{PORT}")
+REGISTRATION_TOKEN = os.getenv("REGISTRATION_TOKEN", "")
 
 # Backward compat
 MCP_AUTH_TOKEN = MCP_API_KEY
